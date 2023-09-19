@@ -1,0 +1,166 @@
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("G2_Sales_Revenue_Prediction").getOrCreate()
+#Read CSV
+
+from pyspark.sql.types import *
+ss = StructType([StructField("order_id",StringType(), True),StructField("order_item_id",IntegerType(), True),StructField("product_id",StringType(), True),StructField("seller_id",StringType(), True),StructField("price",DoubleType(), True),StructField("freight_value",DoubleType(), True)])
+df2_readcsv= spark.read.format("csv").option("header", "true").option("inferSchema", "false").option("sep", ",").schema(ss).load("/home/ec2-user/fire-data/Interns/sales_revenue_prediction/adnu_order_items_dataset.csv") 
+
+
+
+# Group By
+
+df2_readcsv.createOrReplaceTempView("groupby_table_3")
+df3_groupby= spark.sql("select order_id ,product_id ,seller_id ,price  , max(order_item_id) as quantity  from groupby_table_3  group by order_id ,product_id ,seller_id ,price") 
+
+
+
+# Group By
+
+df3_groupby.createOrReplaceTempView("groupby_table_4")
+df4_groupby= spark.sql("select seller_id  , sum(price) as order_price  from groupby_table_4  group by seller_id") 
+
+
+
+# Join On Columns
+
+#Read CSV
+
+from pyspark.sql.types import *
+ss = StructType([StructField("mql_id",StringType(), True),StructField("seller_id",StringType(), True),StructField("sdr_id",StringType(), True),StructField("sr_id",StringType(), True),StructField("won_date",StringType(), True),StructField("business_segment",StringType(), True),StructField("lead_type",StringType(), True),StructField("lead_behaviour_profile",StringType(), True),StructField("business_type",StringType(), True),StructField("declared_monthly_revenue",IntegerType(), True),StructField("first_contact_date",StringType(), True),StructField("landing_page_id",StringType(), True),StructField("origin",StringType(), True),StructField("close_duration",StringType(), True)])
+df5_readcsv= spark.read.format("csv").option("header", "true").option("inferSchema", "false").option("sep", ",").schema(ss).load("/home/ec2-user/fire-data/Interns/sales_revenue_prediction/cleaned_marketing_funnel.csv") 
+
+
+
+# String To Date
+
+from pyspark.sql.functions import * 
+df1 = df5_readcsv.withColumn("first_contact_date", to_date(from_unixtime(unix_timestamp(df5_readcsv["first_contact_date"], "MM-dd-yyyy")))) 
+df5_readcsv= df1 
+df9_stringtodate = df5_readcsv
+
+
+
+# Date Time Field Extract
+
+from pyspark.sql.functions import year, month, dayofmonth, hour, minute, second, weekofyear, to_date
+df_stmt=df9_stringtodate.withColumn("first_contact_date_month", month(df9_stringtodate["first_contact_date"]))
+df9_stringtodate=df_stmt
+df10_datetimefieldextract = df9_stringtodate
+
+
+
+# Join On Columns
+
+leftTableJoinColumns = ["seller_id"]
+rightTableJoinColumns = ["seller_id"]
+leftDataFrameColumns = df4_groupby.columns
+rightDataFrameColumns = df10_datetimefieldextract.columns
+pythonstmt = []
+
+
+
+
+for i in range(len(leftTableJoinColumns)):
+    if (rightTableJoinColumns.__contains__(leftTableJoinColumns[i])):
+        pythonstmt.append("temp_left_table_join_6."+leftTableJoinColumns[i]+" as left_"+leftTableJoinColumns[i])
+    else:
+        pythonstmt.append("temp_left_table_join_6."+leftTableJoinColumns[i])
+
+
+for i in range(len(rightTableJoinColumns)):
+    if (leftTableJoinColumns.__contains__(rightTableJoinColumns[i])):
+        pythonstmt.append("temp_right_table_join_6."+rightTableJoinColumns[i]+" as right_"+leftTableJoinColumns[i])
+    else:
+        pythonstmt.append("temp_right_table_join_6."+rightTableJoinColumns[i])
+
+
+for i in range(len(leftDataFrameColumns)):
+    if not(leftTableJoinColumns.__contains__(leftDataFrameColumns[i])):
+        if rightDataFrameColumns.__contains__(leftDataFrameColumns[i]):
+            pythonstmt.append("temp_left_table_join_6."+leftDataFrameColumns[i]+" as left_"+leftDataFrameColumns[i])
+        else:
+            pythonstmt.append("temp_left_table_join_6."+leftDataFrameColumns[i])
+
+
+for i in range(len(rightDataFrameColumns)):
+    if not(rightTableJoinColumns.__contains__(rightDataFrameColumns[i])):
+        if leftDataFrameColumns.__contains__(rightDataFrameColumns[i]):
+            pythonstmt.append("temp_right_table_join_6."+rightDataFrameColumns[i]+" as right_"+rightDataFrameColumns[i])
+        else:
+            pythonstmt.append("temp_right_table_join_6."+rightDataFrameColumns[i])
+
+
+
+
+df4_groupby.createOrReplaceTempView("temp_left_table_join_6")
+df10_datetimefieldextract.createOrReplaceTempView("temp_right_table_join_6")
+stmt = ','.join(pythonstmt)
+df6_joinoncolumns = spark.sql(" SELECT " + stmt + " " " FROM temp_left_table_join_6 RIGHT OUTER JOIN temp_right_table_join_6 ON (  temp_left_table_join_6.seller_id = temp_right_table_join_6.seller_id  )  " " ") 
+
+
+
+# Vector Assembler
+
+from pyspark.ml.feature import VectorAssembler 
+
+assembler = VectorAssembler(inputCols=["declared_monthly_revenue", "first_contact_date_month"], outputCol="column_list") 
+
+df12_vectorassembler = assembler.transform(df6_joinoncolumns) 
+
+
+
+# Split
+
+ratio = float(0.8)
+df13_split_8 = df12_vectorassembler.sample(True, ratio)
+df13_split_9 = df12_vectorassembler.sample(True, 1.0 - ratio)
+
+
+# Random Forest Regression
+
+#fire.nodes.ml.NodeRandomForestRegression not yet implemented!.
+df11_randomforestregression=df13_split_8
+
+
+# Spark Predict
+
+#fire.nodes.ml.NodePredict not yet implemented!.
+df14_sparkpredict=df13_split_9
+
+
+# Regression Evaluator
+
+if not (df14_sparkpredict.rdd.isEmpty()):
+    from pyspark.ml.evaluation import RegressionEvaluator
+    regression_evaluator = RegressionEvaluator(  predictionCol="order_price",  labelCol="order_price", metricName="null")
+    rmse_evalutated_metric = regression_evaluator.evaluate(df14_sparkpredict, {regression_evaluator.metricName: "rmse"}) 
+    mse_evalutated_metric = regression_evaluator.evaluate(df14_sparkpredict, {regression_evaluator.metricName: "mse"})
+    r2_evalutated_metric = regression_evaluator.evaluate(df14_sparkpredict, {regression_evaluator.metricName: "r2"})
+    mae_evalutated_metric = regression_evaluator.evaluate(df14_sparkpredict, {regression_evaluator.metricName: "mae"})
+    var_evalutated_metric = regression_evaluator.evaluate(df14_sparkpredict, {regression_evaluator.metricName: "var"}) 
+    print("RMSE:"+str(rmse_evalutated_metric)+", MSE:"+str(mse_evalutated_metric)+", R2: "+str(r2_evalutated_metric)+", MAE: "+str(mae_evalutated_metric)+",VAR: "+str(var_evalutated_metric)) 
+
+
+
+
+
+# String To Date
+
+from pyspark.sql.functions import * 
+df1 = df5_readcsv.withColumn("first_contact_date", to_date(from_unixtime(unix_timestamp(df5_readcsv["first_contact_date"], "mm/dd/yyyy")))) 
+df5_readcsv= df1 
+df1 = df5_readcsv.withColumn("won_date", to_date(from_unixtime(unix_timestamp(df5_readcsv["won_date"], "mm/dd/yyyy")))) 
+df5_readcsv= df1 
+df1 = df5_readcsv.withColumn("close_duration", unix_timestamp(df5_readcsv["close_duration"], "dd-HH:mm:ss".cast("timestamp")) 
+df5_readcsv= df1 
+df18_stringtodate = df5_readcsv
+
+
+
+# Group By
+
+df18_stringtodate.createOrReplaceTempView("groupby_table_19")
+df19_groupby= spark.sql("select sdr_id  , count(sr_id) as count_closed_deals , count(distinct business_segment) as count_distinct_business_segment , count(distinct lead_type) as count_distinct_lead_type  from groupby_table_19  group by sdr_id") 
+
