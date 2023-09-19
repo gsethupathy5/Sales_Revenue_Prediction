@@ -1,0 +1,36 @@
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("G2_Sales_Rev_Pred_EDA").getOrCreate()
+#Read CSV
+
+from pyspark.sql.types import *
+ss = StructType([StructField("mql_id",StringType(), True),StructField("seller_id",StringType(), True),StructField("sdr_id",StringType(), True),StructField("sr_id",StringType(), True),StructField("won_date",StringType(), True),StructField("business_segment",StringType(), True),StructField("lead_type",StringType(), True),StructField("lead_behaviour_profile",StringType(), True),StructField("has_company",StringType(), True),StructField("has_gtin",StringType(), True),StructField("average_stock",StringType(), True),StructField("business_type",StringType(), True),StructField("declared_product_catalog_size",StringType(), True),StructField("declared_monthly_revenue",DoubleType(), True)])
+df1_readcsv= spark.read.format("csv").option("header", "true").option("inferSchema", "false").option("sep", ",").schema(ss).load("/home/sparkflows/fire-data/Interns/sales_revenue_prediction/adnu_closed_deals_dataset.csv") 
+
+
+
+# Group By
+
+df1_readcsv.createOrReplaceTempView("groupby_table_2")
+df2_groupby= spark.sql("select business_segment ,sr_id  , count(sr_id) as deal_count_by_segment , sum(declared_monthly_revenue) as total_revenue_by_segment  from groupby_table_2  group by business_segment ,sr_id") 
+
+
+
+# Bar Group Chart
+
+df15_bargroupchart = df2_groupby
+
+
+
+# Group By
+
+df1_readcsv.createOrReplaceTempView("groupby_table_3")
+df3_groupby= spark.sql("select sr_id ,lead_type  , count(sr_id) as sr_deal_cnt_by_leadtype  from groupby_table_3  group by sr_id ,lead_type") 
+
+
+
+# Bar Group Chart
+
+df14_bargroupchart = df3_groupby
+
+
